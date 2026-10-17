@@ -1,0 +1,25 @@
+{
+  "default_policy": "ALLOW",
+  "blocked_ips": [
+    "10.0.0.1",
+    "10.0.0.4"
+  ],
+  "rules": [
+    {
+      "rule_id": "deny_http_to_h5",
+      "action": "DENY",
+      "ip_dst": "10.0.0.5",
+      "proto": "TCP",
+      "dst_port": 80,
+      "priority": 240
+    },
+    {
+      "rule_id": "deny_dns_udp_to_h6",
+      "action": "DENY",
+      "ip_dst": "10.0.0.6",
+      "proto": "UDP",
+      "dst_port": 53,
+      "priority": 230
+    }
+  ]
+}

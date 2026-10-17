@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SDN Dashboard - Policies</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin:0; background:#f3f6fc; font-family:"Segoe UI",sans-serif; display:flex; justify-content:center; padding:30px; color:#1d2b45; }
+    .wrapper { width:1150px; background:white; border-radius:18px; display:grid; grid-template-columns:230px 1fr; overflow:hidden; box-shadow:0 4px 22px rgba(0,0,0,0.08); }
+    .sidebar { background:#112034; padding:24px 16px; display:flex; flex-direction:column; gap:20px; }
+    .sidebar a { color:#c8d3e5; padding:12px 14px; border-radius:8px; font-size:16px; text-decoration:none; transition:0.2s; display:block; }
+    .sidebar a:hover { background:rgba(255,255,255,0.08); }
+    .sidebar a.active { background:#ffffff; color:#112034 !important; font-weight:600; }
+    .content { padding:26px 32px; background:#f7f9ff; display:flex; flex-direction:column; gap:16px; }
+    h1 { font-size:28px; margin:0; }
+    .subtitle { font-size:14px; color:#5a6a83; margin-top:2px; }
+    .card { background:white; border-radius:14px; padding:16px 20px; border:1px solid #d8e0ed; box-shadow:0 2px 10px rgba(0,0,0,0.05); }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    thead { background:#f2f5fb; }
+    th, td { padding:10px 10px; text-align:left; border-bottom:1px solid #e0e6f1; vertical-align:top; }
+    th { font-weight:600; color:#4c607a; }
+    .kv { font-size:14px; color:#44556e; line-height:1.7; }
+    .kv b { color:#1d2b45; }
+    .btn { border:none; cursor:pointer; padding:9px 14px; border-radius:999px; font-size:13px; font-weight:650; background:#1f6feb; color:#fff; }
+    .row { display:flex; gap:10px; align-items:center; margin-top:10px; }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <nav class="sidebar">
+    <a href="/overview.html">Overview</a>
+    <a href="/live_traffic.html">Live Traffic</a>
+    <a class="active" href="/alerts.html">Policies</a>
+    <a href="/blocked_ips.html">Blocked IPs</a>
+  </nav>
+
+  <main class="content">
+    <h1>Policies</h1>
+    <div class="subtitle">Data pulled from <b>policies/firewall_policy.json</b> and <b>policies/ddos_policy.json</b>.</div>
+
+    <div class="card">
+      <div style="font-weight:650; margin-bottom:8px;">DDoS Policy</div>
+      <div id="ddosPolicy" class="kv">—</div>
+      <div class="row">
+        <button id="btnReload" class="btn">Reload Policies</button>
+      </div>
+      <div id="reloadMsg" class="subtitle" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:650; margin-bottom:8px;">Firewall DENY Rules</div>
+      <table>
+        <thead>
+          <tr>
+            <th>rule_id</th>
+            <th>proto</th>
+            <th>ip_src</th>
+            <th>ip_dst</th>
+            <th>dst_port</th>
+            <th>priority</th>
+          </tr>
+        </thead>
+        <tbody id="rulesBody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+  async function apiGet(path) {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+  async function apiPost(path, body) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body ?? {})
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async function render() {
+    const ov = await apiGet("/api/overview");
+    const d = ov.ddos_policy;
+    document.getElementById("ddosPolicy").innerHTML =
+      `<b>window_seconds:</b> ${d.window_seconds}<br>` +
+      `<b>threshold_packets:</b> ${d.threshold_packets}<br>` +
+      `<b>block_seconds:</b> ${d.block_seconds}<br>` +
+      `<b>priority:</b> ${d.priority}`;
+
+    const rules = await apiGet("/api/firewall/deny-rules");
+    const body = document.getElementById("rulesBody");
+    body.innerHTML = "";
+    for (const r of rules.deny_rules) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.rule_id ?? ""}</td>
+        <td>${r.proto ?? ""}</td>
+        <td>${r.ip_src ?? ""}</td>
+        <td>${r.ip_dst ?? ""}</td>
+        <td>${r.dst_port ?? ""}</td>
+        <td>${r.priority ?? ""}</td>`;
+      body.appendChild(tr);
+    }
+  }
+
+  document.getElementById("btnReload").addEventListener("click", async () => {
+    const msg = document.getElementById("reloadMsg");
+    msg.textContent = "Reloading...";
+    try {
+      const out = await apiPost("/api/reload");
+      msg.textContent = out.reloaded ? "Reloaded successfully." : "Reload failed.";
+      await render();
+    } catch(e) {
+      msg.textContent = "Reload failed.";
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>

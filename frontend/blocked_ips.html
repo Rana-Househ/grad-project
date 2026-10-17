@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SDN Dashboard - Blocked IPs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin:0; background:#f3f6fc; font-family:"Segoe UI",sans-serif; display:flex; justify-content:center; padding:30px; color:#1d2b45; }
+    .wrapper { width:1150px; background:white; border-radius:18px; display:grid; grid-template-columns:230px 1fr; overflow:hidden; box-shadow:0 4px 22px rgba(0,0,0,0.08); }
+    .sidebar { background:#112034; padding:24px 16px; display:flex; flex-direction:column; gap:20px; }
+    .sidebar a { color:#c8d3e5; padding:12px 14px; border-radius:8px; font-size:16px; text-decoration:none; transition:0.2s; display:block; }
+    .sidebar a:hover { background:rgba(255,255,255,0.08); }
+    .sidebar a.active { background:#ffffff; color:#112034 !important; font-weight:600; }
+    .content { padding:26px 32px; background:#f7f9ff; display:flex; flex-direction:column; gap:16px; }
+    h1 { font-size:28px; margin:0; }
+    .subtitle { font-size:14px; color:#5a6a83; margin-top:2px; }
+    .card { background:white; border-radius:14px; padding:16px 20px; border:1px solid #d8e0ed; box-shadow:0 2px 10px rgba(0,0,0,0.05); }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    thead { background:#f2f5fb; }
+    th, td { padding:10px 10px; text-align:left; border-bottom:1px solid #e0e6f1; }
+    th { font-weight:600; color:#4c607a; }
+    .row { display:flex; gap:10px; align-items:center; }
+    input { padding:10px 12px; border-radius:10px; border:1px solid #d8e0ed; width:320px; }
+    .btn { border:none; cursor:pointer; padding:9px 14px; border-radius:999px; font-size:13px; font-weight:650; }
+    .btn-primary { background:#1f6feb; color:white; }
+    .btn-danger { background:#c0392b; color:white; }
+    .note { font-size:12px; color:#5a6a83; margin-top:8px; }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <nav class="sidebar">
+    <a href="/overview.html">Overview</a>
+    <a href="/live_traffic.html">Live Traffic</a>
+    <a href="/policies.html">Policies</a>
+    <a class="active" href="/blocked_ips.html">Blocked IPs</a>
+  </nav>
+
+  <main class="content">
+    <h1>Blocked IPs</h1>
+    <div class="subtitle">Managed directly from <b>policies/firewall_policy.json</b>.</div>
+
+    <div class="card">
+      <div class="row">
+        <input id="ipInput" placeholder="IP address (e.g., 10.0.0.7)" />
+        <button class="btn btn-primary" id="btnAdd">Block IP</button>
+      </div>
+      <div class="note">This updates the policy file and the in-memory FirewallEngine. Applying changes to already-installed OpenFlow drop rules is not implemented in the current controller.</div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th style="width:180px;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+  async function apiGet(path) {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+  async function apiPost(path, body) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async function load() {
+    const data = await apiGet("/api/firewall/blocked-ips");
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
+    for (const ip of data.blocked_ips) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${ip}</td>
+        <td>
+          <button class="btn btn-danger" data-ip="${ip}">Unblock</button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  document.getElementById("btnAdd").addEventListener("click", async () => {
+    const ip = document.getElementById("ipInput").value.trim();
+    if (!ip) return;
+    await apiPost("/api/firewall/blocked-ips/add", { ip });
+    document.getElementById("ipInput").value = "";
+    await load();
+  });
+
+  document.addEventListener("click", async (e) => {
+    if (e.target.matches(".btn-danger")) {
+      const ip = e.target.getAttribute("data-ip");
+      await apiPost("/api/firewall/blocked-ips/remove", { ip });
+      await load();
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>

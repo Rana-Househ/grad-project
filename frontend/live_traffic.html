@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SDN Dashboard - Live Traffic</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #f3f6fc;
+      font-family: "Segoe UI", sans-serif;
+      display: flex;
+      justify-content: center;
+      padding: 30px;
+      color: #1d2b45;
+    }
+
+    .wrapper {
+      width: 1150px;
+      background: white;
+      border-radius: 18px;
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      overflow: hidden;
+      box-shadow: 0 4px 22px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: #112034;
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .sidebar a {
+      color: #c8d3e5;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 16px;
+      text-decoration: none;
+      transition: 0.2s;
+      display: block;
+    }
+
+    .sidebar a:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .sidebar a.active {
+      background: #ffffff;
+      color: #112034 !important;
+      font-weight: 700;
+    }
+
+    /* Main content */
+    .content {
+      padding: 26px 32px;
+      background: #f7f9ff;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 30px;
+      margin: 0 0 8px 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 2.2fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 18px 20px;
+      border: 1px solid #d8e0ed;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .metric-title {
+      font-size: 13px;
+      color: #4c617f;
+      margin-bottom: 10px;
+    }
+
+    .metric-value {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .metric-card {
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .metric-sub {
+      font-size: 12px;
+      color: #5c6b85;
+      margin-top: 6px;
+    }
+
+    /* Status */
+    .status-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      margin-top: 12px;
+    }
+
+    .status-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(46, 204, 113, 0.12);
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #2ecc71;
+    }
+
+    .status-down .status-icon {
+      background: rgba(192, 57, 43, 0.12);
+    }
+
+    .status-down .status-dot {
+      background: #c0392b;
+    }
+
+    .status-text-main {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+
+    .status-text-sub {
+      font-size: 14px;
+      color: #44556e;
+    }
+
+    .status-down .status-text-main {
+      color: #c0392b;
+    }
+
+    .note {
+      color:#5c6b85;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+<div class="wrapper">
+
+  <nav class="sidebar">
+    <a href="overview.html">Overview</a>
+    <a class="active" href="live_traffic.html">Live Traffic</a>
+    <a href="policies.html">Policies</a>
+    <a href="blocked_ips.html">Blocked IPs</a>
+  </nav>
+
+  <main class="content">
+    <h1>Live Traffic</h1>
+
+    <div class="grid">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h3 style="margin:0;">Total Bandwidth (Mbps)</h3>
+          <div style="font-size:12px;color:#5c6b85;">Source: OpenFlow Port Stats</div>
+        </div>
+        <canvas id="trafficChart" height="120"></canvas>
+        <div class="note">
+          Data source: OpenFlow Port Stats. Values are aggregated across all switches and ports.
+        </div>
+      </div>
+
+      <div>
+        <div class="card metric-card">
+          <div class="metric-title">Poll Interval</div>
+          <div id="pollIntervalBox" class="metric-value">2s</div>
+          <div class="metric-sub">Auto-updates from /api/live/traffic</div>
+        </div>
+
+        <div id="apiStatusCard" class="card status-card">
+          <div class="status-icon"><div class="status-dot"></div></div>
+          <div>
+            <div id="apiStatusText" class="status-text-main">API Checking...</div>
+            <div id="apiStatusSub" class="status-text-sub">—</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+  let trafficChart = null;
+  let pollTimer = null;
+
+  async function getJson(url) {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(url + " -> " + r.status);
+    return r.json();
+  }
+
+  function setApiStatus(up) {
+    const card = document.getElementById("apiStatusCard");
+    const main = document.getElementById("apiStatusText");
+    const sub = document.getElementById("apiStatusSub");
+    if (!card || !main || !sub) return;
+
+    if (up) {
+      card.classList.remove("status-down");
+      main.textContent = "API Up";
+      sub.textContent = "Ryu Web API is reachable and responding.";
+    } else {
+      card.classList.add("status-down");
+      main.textContent = "API Down";
+      sub.textContent = "Ryu Web API is not reachable.";
+    }
+  }
+
+  function bpsToMbpsValue(bps) {
+    // bits/sec -> megabits/sec
+    return Number(bps || 0) / 1_000_000;
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = val;
+  }
+
+  function initChart() {
+    const ctx = document.getElementById("trafficChart").getContext("2d");
+    trafficChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          { label: "RX Mbps", data: [], fill: true, tension: 0.35 },
+          { label: "TX Mbps", data: [], fill: true, tension: 0.35 }
+        ]
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { display: true } },
+        scales: { x: { display: false }, y: { display: true } }
+      }
+    });
+  }
+
+  function updateChart(points) {
+    if (!trafficChart) initChart();
+
+    const labels = points.map((_, i) => i);
+
+    // IMPORTANT:
+    // Backend should return rx_bps and tx_bps (bits per second)
+    const rxArr = points.map(p => bpsToMbpsValue(p.rx_bps));
+    const txArr = points.map(p => bpsToMbpsValue(p.tx_bps));
+
+    trafficChart.data.labels = labels;
+    trafficChart.data.datasets[0].data = rxArr;
+    trafficChart.data.datasets[1].data = txArr;
+    trafficChart.update();
+
+    // Update latest boxes
+    const latest = points.length ? points[points.length - 1] : null;
+    const rxLatest = latest ? bpsToMbpsValue(latest.rx_bps) : 0;
+    const txLatest = latest ? bpsToMbpsValue(latest.tx_bps) : 0;
+
+    setText("rxLatest", rxLatest.toFixed(2));
+    setText("txLatest", txLatest.toFixed(2));
+  }
+
+  async function startPolling() {
+    // 1) health check
+    try {
+      await getJson("/api/health");
+      setApiStatus(true);
+    } catch (e) {
+      console.error(e);
+      setApiStatus(false);
+      return;
+    }
+
+    // 2) poll traffic
+    const runOnce = async () => {
+      try {
+        const data = await getJson("/api/live/traffic");
+
+        const interval = Number(data.interval ?? 2);
+        const points = Array.isArray(data.points) ? data.points : [];
+
+        setText("pollIntervalBox", interval + "s");
+        updateChart(points);
+
+        // Rebuild timer if backend interval changed
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(runOnce, Math.max(500, interval * 1000));
+
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    await runOnce();
+  }
+
+  startPolling();
+</script>
+
+</body>
+</html>

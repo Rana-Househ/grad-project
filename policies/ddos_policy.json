@@ -1,0 +1,6 @@
+{
+  "window_seconds": 10,
+  "threshold_packets": 60,
+  "block_seconds": 30,
+  "priority": 260
+}

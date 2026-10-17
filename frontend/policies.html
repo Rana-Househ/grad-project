@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SDN Dashboard - Policies</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body{margin:0;background:#f3f6fc;font-family:"Segoe UI",sans-serif;display:flex;justify-content:center;padding:30px;color:#1d2b45}
+    .wrapper{width:1150px;background:white;border-radius:18px;display:grid;grid-template-columns:230px 1fr;overflow:hidden;box-shadow:0 4px 22px rgba(0,0,0,.08)}
+    .sidebar{background:#112034;padding:24px 16px;display:flex;flex-direction:column;gap:20px}
+    .sidebar a{color:#c8d3e5;padding:12px 14px;border-radius:8px;font-size:16px;text-decoration:none;transition:.2s;display:block}
+    .sidebar a:hover{background:rgba(255,255,255,.08)}
+    .sidebar a.active{background:#ffffff;color:#112034!important;font-weight:600}
+
+    .content{padding:26px 32px;background:#f7f9ff;display:flex;flex-direction:column;gap:16px}
+    h1{font-size:28px;margin:0}
+    .subtitle{font-size:14px;color:#5a6a83;margin-top:2px}
+
+    .card{background:white;border-radius:14px;padding:16px 20px;border:1px solid #d8e0ed;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+    .row{display:grid;grid-template-columns:1.2fr 1.8fr;gap:16px}
+    .kv{display:grid;grid-template-columns:180px 1fr;gap:10px;font-size:14px}
+    .k{color:#5a6a83}
+    .v{font-weight:650;word-break:break-word}
+
+    pre{margin:0;background:#f2f5fb;border:1px solid #e0e6f1;border-radius:10px;padding:12px;font-size:13px;overflow:auto}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    thead{background:#f2f5fb}
+    th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #e0e6f1}
+    th{font-weight:600;color:#4c607a}
+
+    .btn{border:none;cursor:pointer;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:700;background:#1f6feb;color:#fff}
+    .btn:disabled{background:#b4c2db;cursor:not-allowed}
+    .msg{font-size:13px;color:#5a6a83;margin-left:10px}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#f2f5fb;border:1px solid #e0e6f1;font-size:12px;color:#4c607a;margin-right:6px;margin-top:6px}
+  </style>
+</head>
+
+<body>
+<div class="wrapper">
+
+  <nav class="sidebar">
+    <a href="overview.html">Overview</a>
+    <a href="live_traffic.html">Live Traffic</a>
+    <a class="active" href="policies.html">Policies</a>
+    <a href="blocked_ips.html">Blocked IPs</a>
+  </nav>
+
+  <main class="content">
+    <div>
+      <h1>Policies</h1>
+      <div class="subtitle">
+        Loaded from <b>policies/firewall_policy.json</b> and <b>policies/ddos_policy.json</b>.
+      </div>
+    </div>
+
+    <div class="card">
+      <button id="reloadBtn" class="btn">Reload Policies</button>
+      <span id="reloadMsg" class="msg">—</span>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h3 style="margin-top:0;">Firewall Policy</h3>
+        <div class="kv">
+          <div class="k">Default Policy</div><div id="fwDefaultPolicy" class="v">—</div>
+          <div class="k">Blocked IPs Count</div><div id="blockedCount" class="v">—</div>
+          <div class="k">Blocked IPs</div><div id="blockedList" class="v">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">DDoS Policy</h3>
+        <pre id="ddosBox">—</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Firewall DENY Rules</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>rule_id</th>
+            <th>action</th>
+            <th>proto</th>
+            <th>ip_dst</th>
+            <th>dst_port</th>
+            <th>priority</th>
+          </tr>
+        </thead>
+        <tbody id="denyBody"></tbody>
+      </table>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function esc(s){
+    return String(s)
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+
+  async function getJson(url){
+    const r = await fetch(url, {cache:"no-store"});
+    if(!r.ok) throw new Error(`${url} -> ${r.status}`);
+    return r.json();
+  }
+
+  async function postJson(url, body){
+    const r = await fetch(url, {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body || {})
+    });
+    if(!r.ok) throw new Error(`${url} -> ${r.status}`);
+    return r.json();
+  }
+
+  function renderDdos(dd){
+    $("ddosBox").textContent =
+      `window_seconds: ${dd?.window_seconds ?? "—"}\n` +
+      `threshold_packets: ${dd?.threshold_packets ?? "—"}\n` +
+      `block_seconds: ${dd?.block_seconds ?? "—"}\n` +
+      `priority: ${dd?.priority ?? "—"}`;
+  }
+
+  function renderBlocked(ips){
+    $("blockedCount").textContent = Array.isArray(ips) ? ips.length : 0;
+    const host = $("blockedList");
+    host.innerHTML = "";
+    if(!ips || ips.length === 0){
+      host.textContent = "—";
+      return;
+    }
+    ips.forEach(ip => {
+      const span = document.createElement("span");
+      span.className = "pill";
+      span.textContent = ip;
+      host.appendChild(span);
+    });
+  }
+
+  function renderDenyRules(rules){
+    const tbody = $("denyBody");
+    tbody.innerHTML = "";
+    if(!Array.isArray(rules) || rules.length === 0){
+      tbody.innerHTML = `<tr><td colspan="6" style="padding:10px;color:#6b7a90;">No DENY rules found.</td></tr>`;
+      return;
+    }
+    for(const r of rules){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${esc(r.rule_id ?? "—")}</td>
+        <td>${esc(r.action ?? "—")}</td>
+        <td>${esc(r.proto ?? "—")}</td>
+        <td>${esc(r.ip_dst ?? "—")}</td>
+        <td>${esc(r.dst_port ?? "—")}</td>
+        <td>${esc(r.priority ?? "—")}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function loadAll(){
+    const ov = await getJson("/api/overview");
+    $("fwDefaultPolicy").textContent = ov.defaultPolicy ?? "—";
+    renderBlocked(ov.blockedIps || []);
+    renderDdos(ov.ddosPolicy || {});
+
+    const deny = await getJson("/api/firewall/deny-rules");
+    renderDenyRules(deny.deny_rules || []);
+  }
+
+  $("reloadBtn").addEventListener("click", async () => {
+    $("reloadMsg").textContent = "Reloading...";
+    $("reloadBtn").disabled = true;
+    try{
+      await postJson("/api/reload", {});
+      $("reloadMsg").textContent = "Reload successful.";
+      await loadAll();
+    }catch(e){
+      console.error(e);
+      $("reloadMsg").textContent = "Reload failed.";
+    }finally{
+      $("reloadBtn").disabled = false;
+    }
+  });
+
+  loadAll().then(() => {
+    $("reloadMsg").textContent = "Loaded.";
+  }).catch(err => {
+    console.error(err);
+    $("reloadMsg").textContent = "Failed to load data from API.";
+  });
+</script>
+
+</body>
+</html>

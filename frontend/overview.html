@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SDN Dashboard - Overview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      margin: 0;
+      background: #f3f6fc;
+      font-family: "Segoe UI", sans-serif;
+      display: flex;
+      justify-content: center;
+      padding: 30px;
+      color: #1d2b45;
+    }
+
+    .wrapper {
+      width: 1150px;
+      background: white;
+      border-radius: 18px;
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      overflow: hidden;
+      box-shadow: 0 4px 22px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: #112034;
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .sidebar a {
+      color: #c8d3e5;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 16px;
+      text-decoration: none;
+      transition: 0.2s;
+      display: block;
+    }
+
+    .sidebar a:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .sidebar a.active {
+      background: #ffffff;
+      color: #112034 !important;
+      font-weight: 700;
+    }
+
+    /* Main */
+    .content {
+      padding: 26px 32px;
+      background: #f7f9ff;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 30px;
+      margin: 0 0 8px 0;
+    }
+
+    .grid-top {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 18px 20px;
+      border: 1px solid #d8e0ed;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .metric-title {
+      font-size: 13px;
+      color: #4c617f;
+      margin-bottom: 10px;
+    }
+
+    .metric-value {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .metric-value.small {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1d2b45;
+    }
+
+    .ddos-box {
+      margin-top: 8px;
+      background: #f2f5fb;
+      border: 1px solid #e0e6f1;
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 13px;
+      color: #2b3a52;
+      white-space: pre-wrap;
+    }
+
+    /* Status */
+    .status-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+    }
+
+    .status-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(46, 204, 113, 0.12);
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #2ecc71;
+    }
+
+    .status-down .status-icon {
+      background: rgba(192, 57, 43, 0.12);
+    }
+
+    .status-down .status-dot {
+      background: #c0392b;
+    }
+
+    .status-text-main {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+
+    .status-text-sub {
+      font-size: 14px;
+      color: #44556e;
+    }
+
+    .status-down .status-text-main {
+      color: #c0392b;
+    }
+  </style>
+</head>
+
+<body>
+<div class="wrapper">
+
+  <nav class="sidebar">
+    <a class="active" href="overview.html">Overview</a>
+    <a href="live_traffic.html">Live Traffic</a>
+    <a href="policies.html">Policies</a>
+    <a href="blocked_ips.html">Blocked IPs</a>
+  </nav>
+
+  <main class="content">
+    <h1>Overview</h1>
+
+    <div class="grid-top">
+      <div class="card">
+        <div class="metric-title">Blocked IPs</div>
+        <div id="blockedIpsCount" class="metric-value">—</div>
+      </div>
+
+      <div class="card">
+        <div class="metric-title">Firewall Default Policy</div>
+        <div id="fwDefaultPolicy" class="metric-value small">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="metric-title" style="margin-bottom:6px;">DDoS Policy</div>
+      <div id="ddosPolicyBox" class="ddos-box">—</div>
+    </div>
+
+    <div id="controllerStatusCard" class="card status-card">
+      <div class="status-icon"><div class="status-dot"></div></div>
+      <div>
+        <div id="controllerStatusText" class="status-text-main">API Checking...</div>
+        <div id="controllerStatusSub" class="status-text-sub">—</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  async function getJson(url) {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(url + " -> " + r.status);
+    return r.json();
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = (val === undefined || val === null || val === "") ? "—" : val;
+  }
+
+  function renderDdos(dd) {
+    const box = document.getElementById("ddosPolicyBox");
+    if (!box) return;
+    box.textContent =
+      "window_seconds: " + (dd?.window_seconds ?? "—") + "\n" +
+      "threshold_packets: " + (dd?.threshold_packets ?? "—") + "\n" +
+      "block_seconds: " + (dd?.block_seconds ?? "—") + "\n" +
+      "priority: " + (dd?.priority ?? "—");
+  }
+
+  function setApiStatus(up) {
+    const card = document.getElementById("controllerStatusCard");
+    const main = document.getElementById("controllerStatusText");
+    const sub = document.getElementById("controllerStatusSub");
+    if (!card || !main || !sub) return;
+
+    if (up) {
+      card.classList.remove("status-down");
+      main.textContent = "API Up";
+      sub.textContent = "Ryu Web API is reachable and responding.";
+    } else {
+      card.classList.add("status-down");
+      main.textContent = "API Down";
+      sub.textContent = "Ryu Web API is not reachable.";
+    }
+  }
+
+  async function loadOverview() {
+    try {
+      await getJson("/api/health");
+      setApiStatus(true);
+    } catch (e) {
+      console.error(e);
+      setApiStatus(false);
+      return; 
+    }
+
+    try {
+      const ov = await getJson("/api/overview");
+      setText("blockedIpsCount", ov.blockedIpsCount);
+      setText("fwDefaultPolicy", ov.defaultPolicy);
+      renderDdos(ov.ddosPolicy || {});
+    } catch (e) {
+      console.error(e);
+      setText("blockedIpsCount", "—");
+      setText("fwDefaultPolicy", "—");
+      setText("ddosPolicyBox", "—");
+    }
+  }
+
+  loadOverview();
+</script>
+
+</body>
+</html>
+overview.html
